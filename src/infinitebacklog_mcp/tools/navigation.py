@@ -7,24 +7,28 @@ from ..security import ib_url_from_path
 
 
 async def open_site(path: str = "/", wait_ms: int = 2000, headless: bool = True) -> str:
-    """Navigate to a page on infinitebacklog.net. Pass headless=false for a visible window so you can log in."""
+    """Open a page on infinitebacklog.net in this server's Playwright window.
+
+    Pass headless=false to show that window and sign in once. Later calls reuse the same profile.
+    """
     ib_url_from_path(path)
     page = await _ensure_browser(headless=headless)
     await _goto_ib(page, path, wait_ms)
     title = await page.title()
-    return f"Opened {page.url}\nTitle: {title}\nheadless={browser_mod._headless_mode}"
+    return f"Opened {page.url}\nTitle: {title}\n{browser_mod.session_details()}"
 
 
 async def current_url() -> str:
-    """Return current URL and title."""
+    """Return the current URL, title, and whether Playwright is headless."""
     page = await _ensure_browser()
-    return f"URL: {page.url}\nTitle: {await page.title()}"
+    title = await page.title()
+    return f"URL: {page.url}\nTitle: {title}\n{browser_mod.session_details()}"
 
 
 async def close_browser() -> str:
-    """Close the shared Playwright browser used by deterministic tools."""
+    """Close the Playwright window. Brave, Chrome, and Edge stay open."""
     await _close_browser()
-    return "Browser closed."
+    return "Playwright window closed."
 
 
 def register(mcp) -> None:

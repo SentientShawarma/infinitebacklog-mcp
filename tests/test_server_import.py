@@ -1,7 +1,10 @@
 """Smoke tests that load the MCP server without launching a browser."""
 from __future__ import annotations
 
+import os
 import unittest
+
+os.environ["IB_CDP"] = "0"
 
 
 class ServerImportTests(unittest.TestCase):
@@ -27,7 +30,7 @@ class ServerImportTests(unittest.TestCase):
             "evaluate_js",
             "get_links",
             "current_url",
-            "set_cookies",
+            "login",
             "close_browser",
             "list_related_content",
             "list_collection_content_menus",

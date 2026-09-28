@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Optional
+from urllib.parse import quote
 
 from playwright.async_api import Page
 
@@ -190,6 +191,55 @@ async def _page_igdb_id(page: Page) -> Optional[int]:
         return None
 
 
+def user_id_from_search(username: str, rows: Any) -> int:
+    """Pick the search row whose username matches. Never use the first row."""
+    wanted = (username or "").casefold()
+    if not wanted or not isinstance(rows, list):
+        return 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("username") or "")
+        if name.casefold() != wanted:
+            continue
+        try:
+            return int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def saved_delete_label(labels: Any) -> str | None:
+    """The one saved-copy delete button, or None when it is missing or duplicated."""
+    if not isinstance(labels, list):
+        return None
+    hits = [str(label).strip() for label in labels if str(label).strip().startswith("DELETE GAME FOR ")]
+    if len(hits) != 1:
+        return None
+    return hits[0]
+
+
+async def _user_id_for_username(page: Page, username: str) -> int:
+    try:
+        safe = sanitize_username(username)
+    except SecurityError:
+        return 0
+    path = "/api/users?search=" + quote(safe, safe="")
+    try:
+        rows = await page.evaluate(
+            """async (apiPath) => {
+              const response = await fetch(apiPath, { credentials: 'include' });
+              if (!response.ok) return [];
+              const data = await response.json();
+              return Array.isArray(data) ? data : [];
+            }""",
+            path,
+        )
+    except Exception:
+        return 0
+    return user_id_from_search(safe, rows)
+
+
 async def _logged_in_user(page: Page) -> tuple[str, int]:
     try:
         info = await page.evaluate(
@@ -208,6 +258,8 @@ async def _logged_in_user(page: Page) -> tuple[str, int]:
             uid = int(uid)
         except (TypeError, ValueError):
             uid = 0
+        if not uid and username:
+            uid = await _user_id_for_username(page, username)
         return username or "", uid
     except Exception:
         return "", 0

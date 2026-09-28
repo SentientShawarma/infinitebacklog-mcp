@@ -182,6 +182,7 @@ class ClickFillGuardTests(unittest.TestCase):
     def test_allows_ordinary_clicks(self):
         self.assertIsNone(destructive_click_blocked("#game-search"))
         self.assertIsNone(destructive_click_blocked("text=UPDATE GAME"))
+        self.assertIsNotNone(destructive_click_blocked("text=DELETE GAME FOR PS4"))
 
     def test_blocks_password_fill(self):
         self.assertIsNotNone(credential_fill_blocked("input[type=password]"))
@@ -253,13 +254,14 @@ class ToolEarlyExitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["error"], "credential_fill_blocked")
         self.assertNotIn("secret", json.dumps(out))
 
-    async def test_set_cookies_rejects_foreign_domain(self):
-        from infinitebacklog_mcp.tools.auth import set_cookies
+    async def test_login_failure_hides_password(self):
+        from infinitebacklog_mcp.login import login_failure, redact
 
-        payload = json.dumps([{"name": "sid", "value": "secret-cookie", "domain": ".google.com", "path": "/"}])
-        out = json.loads(await set_cookies(payload))
-        self.assertEqual(out["error"], "cookie_domain")
-        self.assertNotIn("secret-cookie", json.dumps(out))
+        secret = "super-secret-password"
+        out = login_failure(secret)
+        self.assertEqual(out["error"], "login_failed")
+        self.assertNotIn(secret, json.dumps(out))
+        self.assertEqual(redact(f"fill failed {secret}", secret), "fill failed ")
 
     async def test_agent_rejects_offsite_url(self):
         from infinitebacklog_mcp.tools.agent import run_browser_use_task
@@ -278,6 +280,77 @@ class ToolEarlyExitTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(SecurityError):
             await list_related_content("../settings")
+
+
+class SignInPathTests(unittest.IsolatedAsyncioTestCase):
+    async def test_login_from_env_does_not_return_the_password(self):
+        from infinitebacklog_mcp.login import login_from_env
+
+        secret = "super-secret-password"
+
+        class ExplodingPage:
+            url = "https://infinitebacklog.net/"
+
+            async def evaluate(self, *args, **kwargs):
+                raise RuntimeError(f"typed {secret} into the field")
+
+            async def goto(self, *args, **kwargs):
+                raise RuntimeError(f"typed {secret} into the field")
+
+        env = {"IB_USERNAME": "silverwarden", "IB_PASSWORD": secret}
+        with patch.dict(os.environ, env, clear=False):
+            out = await login_from_env(ExplodingPage())
+        self.assertFalse(out["ok"])
+        self.assertNotIn(secret, json.dumps(out))
+
+    def test_ensure_browser_does_not_attach_or_read_cookies(self):
+        import inspect
+
+        from infinitebacklog_mcp.browser import _ensure_browser
+
+        source = inspect.getsource(_ensure_browser)
+        self.assertNotIn("_attach_user_browser", source)
+        self.assertNotIn("IB_COOKIES", source)
+        self.assertNotIn("add_cookies", source)
+
+    def test_login_clicks_the_visible_log_in_control(self):
+        import inspect
+
+        from infinitebacklog_mcp.login import login_from_env
+
+        source = inspect.getsource(login_from_env)
+        self.assertIn("visible=true", source)
+        self.assertNotIn('page.click(".nav-item.login")', source)
+
+    def test_env_example_has_password_login_and_no_cookie_vars(self):
+        from infinitebacklog_mcp.config import project_root
+
+        text = (project_root() / ".env.example").read_text(encoding="utf-8")
+        self.assertIn("IB_USERNAME", text)
+        self.assertIn("IB_PASSWORD", text)
+        self.assertNotIn("IB_COOKIES", text)
+        self.assertNotIn("IB_CDP", text)
+
+    def test_load_project_env_does_not_override(self):
+        from infinitebacklog_mcp.config import load_project_env
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "IB_USERNAME=fromfile\nIB_PASSWORD=sekrit\nKEEP=no\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"KEEP": "yes"}, clear=False):
+                os.environ.pop("IB_USERNAME", None)
+                os.environ.pop("IB_PASSWORD", None)
+                try:
+                    load_project_env(root)
+                    self.assertEqual(os.environ.get("IB_USERNAME"), "fromfile")
+                    self.assertEqual(os.environ.get("IB_PASSWORD"), "sekrit")
+                    self.assertEqual(os.environ.get("KEEP"), "yes")
+                finally:
+                    os.environ.pop("IB_USERNAME", None)
+                    os.environ.pop("IB_PASSWORD", None)
 
 
 if __name__ == "__main__":

@@ -69,7 +69,7 @@ async def list_collection_content_menus(edit_path: str, wait_ms: int = 3000) -> 
     ready = await _wait_collection_edit(page, wait_ms)
     text = " ".join((await page.inner_text("body")).split())[:400]
     if re.search(r"\bLOG IN\b", text) and "UPDATE GAME" not in text:
-        return _dumps({"error": "not_logged_in", "url": page.url, "hint": "Call open_site(..., headless=false) and have the user log in. Do not ask them to paste cookies. Agents may use set_cookies only if IB_COOKIES is already set."})
+        return _dumps({"error": "not_logged_in", "url": page.url, "hint": "Sign in with IB_USERNAME and IB_PASSWORD in .env, or call open_site with headless=false and sign in once in the Playwright window."})
     if not ready:
         return _dumps({"error": "edit_form_not_ready", "url": page.url, "hint": "Wait for UPDATE GAME; SPA shell text is not enough."})
     menus = await _scrape_collection_menus(page)
@@ -90,7 +90,7 @@ async def add_game_content(
     digital: bool | None = None,
     wait_ms: int = 3500,
 ) -> str:
-    """Add owned extras on the parent collection edit form. `names` is a JSON array of Steam/IB titles. Searches DLC first, then PACK/ADDON, EDITIONS, and every extras widget before not_found. DLC is picked from Add DLC to your game; packs are ticked via addon-* labels (only if unchecked). One UPDATE GAME persists nested additions. Does not use /games/add for DLC/packs. Does not change edition, play status, Digital, or Acquisition Info. Never DELETE GAME. `platform` and `digital` are ignored for nested extras (the parent row already has those fields)."""
+    """Add owned extras on the parent collection edit form. `names` is a JSON array of Steam/IB titles. Searches DLC first, then PACK/ADDON, EDITIONS, and every extras widget before not_found. DLC is picked from Add DLC to your game; packs are ticked on the addon-* input (only if unchecked). One UPDATE GAME persists nested additions. Does not use /games/add for DLC/packs. Does not change edition, play status, Digital, or Acquisition Info. Never DELETE GAME. `platform` and `digital` are ignored for nested extras (the parent row already has those fields)."""
     wanted = _parse_names(names)
     if not wanted:
         return _dumps({"error": "no_names", "hint": "pass names as a JSON array string"})

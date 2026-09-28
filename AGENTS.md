@@ -42,20 +42,26 @@ flowchart TD
 | Extra platform copy | `add_game_platform_copy` |
 | Per-copy status, completion, bar, notes | `set_game_progress` |
 | Acquisition Info | `set_game_acquisition` only |
-| DELETE GAME for a saved copy | `delete_game_copy` with `confirm=true` |
+| DELETE GAME FOR {platform} on a saved copy | `delete_game_copy` with `confirm=true` |
 | Play Records | `list_play_records`, `set_play_record_category`, `set_play_record`, `remove_play_record` |
 
 Simple reads and known selectors (`get_page_text`, `click`, `fill`) stay on the deterministic path.
 
 ## Session
 
-- Session already present (user pointed at a signed-in tab, or cookies already in the environment): reuse it. Headless is fine unless they asked for a visible window.
-- Login still needed: `open_site(..., headless=false)` so they sign in inside MCP Chromium. Later calls reuse that session.
-- Never ask a human to copy, export, or paste cookies from DevTools.
-- `IB_COOKIES` and `set_cookies` only when a cookie JSON array is already in the environment. Domains must be `infinitebacklog.net`.
-- A logged-in Brave tab via CDP is a separate attach path. This server does not launch it.
+Tools use this server's Playwright Chromium. The profile lives under `.playwright/ib-profile`. Brave, Chrome, and Edge are left alone, and `close_browser` closes only the Playwright window.
 
-Public catalog pages work without login. Ratings, reviews, and collection writes need a signed-in session.
+Two ways to sign in:
+
+- Leave `IB_USERNAME` and `IB_PASSWORD` empty. Call `open_site` with `headless=false` and sign in once in that window. Later calls reuse the profile.
+- Put the username (or email) and password in `.env`. The `login` tool types them into the Infinite Backlog login form. The form is Keycloak. It also has a remember-me box, which the tool ticks so the Playwright profile keeps the session. Leave that checkbox out of `.env`.
+- If a captcha or a second challenge appears, stop. Call `open_site` with `headless=false` and let the person sign in in that window.
+- Addon boxes are ticked on the `addon-*` input, and only when that box is unchecked.
+- `run_browser_use_task` stays on infinitebacklog.net. It needs `browser-use` plus an LLM key. Prefer the deterministic tools. They do not spend an extra model call.
+
+The server does not read a browser cookie file. The file is locked while that browser is running, and closing the browser is still not a way in. Do not ask anyone to copy, export, or paste cookies.
+
+`open_site` and `current_url` report `mode=launched` for this Playwright window. Public catalog pages work without a session. Ratings, reviews, and collection writes need one.
 
 ## Collection model (live IB v1.13.6)
 
@@ -65,7 +71,7 @@ DLC and packs are **nested `additions` on the parent collection row**, not stand
 - `already_owned` is parent `additions[]` (and the edit form Owned DLC list).
 - `/games/add/{dlc-slug}` SPA-redirects to `/games/{slug}`. There is no add form.
 - Parent edit path: `/users/{user}/collection/{parent-slug}/edit?id={collection_id}`
-- Pick extras from **Add DLC to your game**. Tick **ADDONS/PACKS** labels only when they are unchecked. Click **UPDATE GAME** once.
+- Pick extras from **Add DLC to your game**. Tick **ADDONS/PACKS** on the `addon-*` input, and only when that box is unchecked. Click **UPDATE GAME** once.
 - During `add_game_content`, do not click **DELETE GAME**, fill Acquisition Info, or change edition / Digital-Physical / play status.
 - If a title is missing from DLC, search PACK/ADDON, EDITIONS, extra-content checklists, and every other live related tab and extras dropdown before `not_found`. Skins are often packs, not DLC. An edition extra lives under EDITIONS; never switch the parent edition.
 - Nested extras are add-only in this pass. Do not auto-untick owned DLC.
@@ -73,7 +79,7 @@ DLC and packs are **nested `additions` on the parent collection row**, not stand
 - Progress (status, completion, bar, notes) is per copy on the collection edit form.
 - IB hides `.collection-rating` while Unplayed or No Status. `set_game_rating` locally sets Playing on the edit form (no UPDATE GAME) then restores status.
 - Play Records live at `/collection/{slug}/edit/stats` (`li.stats-link`). Categories are per-game (`keyValue` / `checkbox` / `progress` / `table`), not a profile library.
-- Only `set_game_acquisition` writes Acquisition Info. Only `delete_game_copy` clicks DELETE GAME, and only with `confirm=true`.
+- Only `set_game_acquisition` writes Acquisition Info. Only `delete_game_copy` clicks `DELETE GAME FOR {platform}` on a saved copy, and only with `confirm=true`.
 
 ## Security and bounds
 

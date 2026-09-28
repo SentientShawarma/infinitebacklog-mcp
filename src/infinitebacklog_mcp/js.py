@@ -149,9 +149,16 @@ FILL_ADD_FORM_JS = """
     const label = ((labelEl && labelEl.innerText) || meta).toLowerCase();
     if (skip.test(label + meta)) continue;
     if ([...sel.options].some(o => /Add DLC to your game/i.test(o.text || ''))) continue;
-    if (/platform/.test(label + meta) || sel.id === 'platform-select') {
+    if (/platform/.test(label + meta) || sel.id === 'platform-select' || sel.id === 'null-select') {
       if (platformText) report.platform = setSelect(sel, [platformText]);
     }
+  }
+
+  const wantedPlatform = String(platformText || '').trim();
+  if (wantedPlatform && (report.platform || '').trim() !== wantedPlatform) {
+    report.clicked = null;
+    report.refused = 'platform_not_exact';
+    return report;
   }
 
   const digitalBox = document.getElementById('digital')
@@ -243,8 +250,14 @@ TICK_ONE_ADDON_JS = """
     if (!ibNamesMatch(wanted, text, parentTitle)) continue;
     const gid = Number(String(c.id).replace(/^addon-/, '')) || null;
     if (c.checked) return { status: 'already', id: c.id, label: text, game_id: gid };
-    if (lab) lab.click();
-    else c.click();
+    c.click();
+    if (!c.checked) {
+      const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'checked').set;
+      proto.call(c, true);
+      c.dispatchEvent(new Event('input', { bubbles: true }));
+      c.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (!c.checked) return { error: 'not_checked', id: c.id, label: text, game_id: gid };
     return { status: 'clicked', id: c.id, label: text, game_id: gid };
   }
   return { error: 'no_addon_checkbox' };

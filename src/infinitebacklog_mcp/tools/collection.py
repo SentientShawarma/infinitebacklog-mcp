@@ -48,6 +48,7 @@ from ..pages import (
     _require_collection_id,
     _resolve_game_context,
     _wait_left_edit_form,
+    saved_delete_label,
 )
 
 async def list_collection_game_options(slug: str, collection_id: str = "", wait_ms: int = 3000) -> str:
@@ -162,7 +163,7 @@ async def list_collection_game_options(slug: str, collection_id: str = "", wait_
                 "confirm_heading": "DELETE GAME FROM COLLECTION",
                 "confirm_buttons": ["YES", "NO"],
                 "do_not_click": True,
-                "hint": "Only delete_game_copy with confirm=true clicks DELETE GAME, then YES.",
+                "hint": "Only delete_game_copy with confirm=true clicks the single DELETE GAME FOR {platform} button, then YES.",
             },
             "play_records": {
                 "tab": (acquisition or {}).get("play_records_tab") if isinstance(acquisition, dict) else None,
@@ -464,7 +465,7 @@ async def delete_game_copy(
     confirm: bool = False,
     wait_ms: int = 3000,
 ) -> str:
-    """Delete a saved collection copy via DELETE GAME. collection_id always required. confirm=true required. Does not click DELETE DRAFT or DELETE GAME FOR unsaved extra platforms. Last remaining copy removes the game from the collection."""
+    """Delete a saved collection copy. collection_id always required. confirm=true required. On the saved edit form, clicks the single DELETE GAME FOR {platform} button, then YES. Does not click when that button is missing or duplicated, and does not click DELETE DRAFT. Last remaining copy removes the game from the collection."""
     if not str(collection_id or "").strip():
         return _dumps({"error": "collection_id_required", "hint": "collection_id is always required to delete a copy."})
     if not confirm:
@@ -485,9 +486,21 @@ async def delete_game_copy(
     edit = await _open_collection_edit(page, ctx["username"], ctx["slug"], cid, wait_ms)
     if edit.get("error"):
         return _dumps(edit)
-    click = await _click_exact_button(page, "DELETE GAME")
+    if f"id={cid}" not in (page.url or ""):
+        return _dumps({"error": "wrong_edit_url", "url": page.url, "collection_id": cid})
+    found = await page.evaluate(
+        """() => {
+          const hasUpdate = [...document.querySelectorAll('button')].some(b => (b.innerText || '').trim() === 'UPDATE GAME');
+          const labels = [...document.querySelectorAll('button')].map(b => (b.innerText || '').trim()).filter(t => t.startsWith('DELETE GAME FOR '));
+          return { hasUpdate, labels };
+        }"""
+    )
+    label = saved_delete_label((found or {}).get("labels")) if (found or {}).get("hasUpdate") else None
+    if not label:
+        return _dumps({"error": "delete_button_missing", "url": page.url, "found": found})
+    click = await _click_exact_button(page, label)
     if not click.get("clicked"):
-        return _dumps({"error": "delete_button_missing", "url": page.url, "click": click})
+        return _dumps({"error": "delete_button_missing", "url": page.url, "click": click, "label": label})
     await page.wait_for_timeout(800)
     modal = await page.evaluate(
         """() => {
@@ -496,6 +509,8 @@ async def delete_game_copy(
           return { heading, buttons, hint: 'Are you sure you want to delete this game from your collection?' };
         }"""
     )
+    if "DELETE GAME FROM COLLECTION" not in (modal.get("heading") or "").upper():
+        return _dumps({"error": "confirm_modal_missing", "url": page.url, "click": click, "modal": modal})
     confirm_click = await _click_exact_button(page, "YES")
     await page.wait_for_timeout(2500)
     after_rows = await _collection_rows_for_game(page, ctx["user_id"], ctx["game_id"] or 0)

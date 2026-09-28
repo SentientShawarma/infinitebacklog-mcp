@@ -1,33 +1,47 @@
-"""MCP tools: auth."""
+"""MCP tools: sign-in."""
 from __future__ import annotations
-
-import json
 
 from .. import browser as browser_mod
 from ..browser import _ensure_browser, locked_tool
+from ..login import credentials, signed_in_username
 from ..normalize import _dumps
-from ..security import SecurityError, filter_ib_cookies
 
 
-async def set_cookies(cookies_json: str) -> str:
+async def login(headless: bool = True) -> str:
+    """Sign in with IB_USERNAME and IB_PASSWORD from the environment.
+
+    Types them into the Infinite Backlog login form. If either value is missing,
+    nothing is typed. Use the Playwright window instead (open_site with headless=false).
     """
-    Inject cookies for authenticated sessions.
-    JSON array: [{"name":"...","value":"...","domain":".infinitebacklog.net","path":"/"}, ...]
-    Only infinitebacklog.net cookies are accepted.
-    """
-    try:
-        cookies = filter_ib_cookies(json.loads(cookies_json))
-    except SecurityError as exc:
-        return _dumps({"error": exc.code, "hint": str(exc)})
-    except Exception:
-        return _dumps({"error": "invalid_cookies", "hint": "Cookies must be a JSON array of objects."})
-    await _ensure_browser()
-    try:
-        await browser_mod._context.add_cookies(cookies)
-        return f"Added {len(cookies)} cookie(s)."
-    except Exception:
-        return _dumps({"error": "cookie_inject_failed", "hint": "Playwright rejected the cookie payload."})
+    username, password = credentials()
+    if not username or not password:
+        return _dumps(
+            {
+                "ok": False,
+                "error": "credentials_missing",
+                "hint": (
+                    "Set IB_USERNAME and IB_PASSWORD in .env, "
+                    "or sign in once in the Playwright window."
+                ),
+            }
+        )
+    del password
+    browser_mod._login_result = ""
+    page = await _ensure_browser(headless=headless)
+    if browser_mod._login_result == "ok":
+        name = await signed_in_username(page)
+        return _dumps({"ok": True, "username": name or username})
+    return _dumps(
+        {
+            "ok": False,
+            "error": "login_failed",
+            "hint": (
+                "Sign-in did not finish. Open the Playwright window "
+                "with headless=false and sign in there."
+            ),
+        }
+    )
 
 
 def register(mcp) -> None:
-    mcp.tool()(locked_tool(set_cookies))
+    mcp.tool()(locked_tool(login))

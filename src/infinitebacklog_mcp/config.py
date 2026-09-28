@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 IB_ORIGIN = "https://infinitebacklog.net"
@@ -233,3 +234,52 @@ def setup_logging() -> logging.Logger:
 
 
 logger = setup_logging()
+
+
+def project_root() -> Path:
+    """Directory that holds pyproject.toml, or the process working directory."""
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").is_file():
+        return cwd
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file() and (parent / "src").is_dir():
+            return parent
+    return cwd
+
+
+def load_project_env(root: Path | None = None) -> None:
+    """Read KEY=VALUE lines from the project .env. Existing process values stay."""
+    path = (root or project_root()) / ".env"
+    if not path.is_file():
+        return
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        logger.info("Could not read the project .env file")
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+def playwright_profile_dir() -> Path:
+    path = project_root() / ".playwright" / "ib-profile"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+load_project_env()

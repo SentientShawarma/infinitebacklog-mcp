@@ -257,6 +257,54 @@ class AcquisitionPlayRecordTests(unittest.TestCase):
         self.assertEqual(slim["digital_store"], "steam")
 
 
+class UserIdSearchTests(unittest.TestCase):
+    def test_matches_username_not_first_row(self):
+        from infinitebacklog_mcp.pages import user_id_from_search
+
+        rows = [
+            {"id": 1, "username": "Adilya"},
+            {"id": 34007, "username": "SilverWarden"},
+        ]
+        self.assertEqual(user_id_from_search("silverwarden", rows), 34007)
+
+    def test_no_match_returns_zero(self):
+        from infinitebacklog_mcp.pages import user_id_from_search
+
+        self.assertEqual(user_id_from_search("silverwarden", [{"id": 1, "username": "Adilya"}]), 0)
+        self.assertEqual(user_id_from_search("silverwarden", None), 0)
+
+
+class SavedDeleteLabelTests(unittest.TestCase):
+    def test_one_platform_label(self):
+        from infinitebacklog_mcp.pages import saved_delete_label
+
+        self.assertEqual(saved_delete_label(["DELETE GAME FOR PS4"]), "DELETE GAME FOR PS4")
+        self.assertEqual(saved_delete_label(["UPDATE GAME", "DELETE GAME FOR PC"]), "DELETE GAME FOR PC")
+
+    def test_missing_or_duplicated_label_is_refused(self):
+        from infinitebacklog_mcp.pages import saved_delete_label
+
+        self.assertIsNone(saved_delete_label(["DELETE GAME"]))
+        self.assertIsNone(saved_delete_label(["DELETE GAME FOR PS4", "DELETE GAME FOR PC"]))
+        self.assertIsNone(saved_delete_label(None))
+
+
+class AddFormAndAddonJsTests(unittest.TestCase):
+    def test_add_form_uses_null_select_and_refuses_inexact_platform(self):
+        from infinitebacklog_mcp.js import FILL_ADD_FORM_JS
+
+        self.assertIn("null-select", FILL_ADD_FORM_JS)
+        self.assertIn("platform_not_exact", FILL_ADD_FORM_JS)
+
+    def test_addon_tick_uses_the_input_and_requires_checked(self):
+        from infinitebacklog_mcp.js import TICK_ONE_ADDON_JS
+
+        self.assertIn("c.click()", TICK_ONE_ADDON_JS)
+        self.assertIn("HTMLInputElement.prototype, 'checked'", TICK_ONE_ADDON_JS)
+        self.assertIn("not_checked", TICK_ONE_ADDON_JS)
+        self.assertNotIn("lab.click()", TICK_ONE_ADDON_JS)
+
+
 class ConfirmGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_delete_copy_requires_confirm(self):
         from infinitebacklog_mcp.tools.collection import delete_game_copy

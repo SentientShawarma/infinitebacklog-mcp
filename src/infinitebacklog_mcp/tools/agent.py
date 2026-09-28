@@ -30,7 +30,7 @@ async def run_browser_use_task(
 
     Examples:
       - "Go to infinitebacklog.net, search for Hades, and summarize the first result"
-      - "Open my collection page and list unfinished RPGs" (needs cookies/login)
+      - "Open my collection page and list unfinished RPGs" (needs a signed-in Playwright session)
     """
     rejected = agent_task_error(task)
     if rejected:
